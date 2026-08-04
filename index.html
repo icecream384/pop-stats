@@ -92,7 +92,7 @@ b.addEventListener('click',c);i.addEventListener('keydown',function(ev){if(ev.ke
 <script>
 var AMAP_KEY='653175298a4a55e4a56de4bedc412dd6';
 var GRID_S=500,GRID_A=GRID_S*GRID_S,GRID_C=GRID_S*Math.SQRT2/2,SCALE=100000;
-var CDN_BASE='https://cdn.jsdelivr.net/gh/icecream384/pop-stats@main/data/';
+var CDN_BASE='data/';
 var CITIES=['北京','上海','广州','深圳','成都','重庆','杭州','武汉','西安','南京','天津','苏州','长沙','郑州','东莞','青岛','沈阳','佛山','济南','大连','合肥','无锡','宁波','厦门','福州','温州','南宁','贵阳','昆明','南昌','海口','太原','石家庄','兰州','烟台','泉州','徐州','常州','南通','扬州','绍兴','嘉兴','台州','金华','盐城','宜昌','襄阳','珠海','咸阳','三亚','连云港','宿迁'];
 var CC={北京:[116.4075,39.9042],上海:[121.4737,31.2304],广州:[113.2644,23.1291],深圳:[114.0579,22.5431],成都:[104.0658,30.6575],重庆:[106.5516,29.5630],杭州:[120.1551,30.2741],武汉:[114.3054,30.5931],西安:[108.9402,34.2611],南京:[118.7969,32.0603],天津:[117.1901,39.1252],苏州:[120.5853,31.2989],长沙:[112.9388,28.2278],郑州:[113.6254,34.7466],东莞:[113.7518,23.0205],青岛:[120.3826,36.0671],沈阳:[123.4315,41.8057],佛山:[113.1219,23.0215],济南:[117.1205,36.6512],大连:[121.6147,38.9140],合肥:[117.2272,31.8206],无锡:[120.3119,31.4912],宁波:[121.5504,29.8683],厦门:[118.0894,24.4798],福州:[119.2965,26.0745],温州:[120.6994,27.9943],南宁:[108.3661,22.8170],贵阳:[106.6302,26.6477],昆明:[102.8329,24.8801],南昌:[115.8579,28.6820],海口:[110.1983,20.0440],太原:[112.5489,37.8706],石家庄:[114.5149,38.0428],兰州:[103.8343,36.0611],烟台:[121.4479,37.4635],泉州:[118.6759,24.8741],徐州:[117.2841,34.2048],常州:[119.9740,31.8107],南通:[120.8937,31.9806],扬州:[119.4129,32.3936],绍兴:[120.5802,30.0318],嘉兴:[120.7556,30.7460],台州:[121.4206,28.6563],金华:[119.6476,29.0792],盐城:[120.1616,33.3495],宜昌:[111.2865,30.6918],襄阳:[112.1224,32.0090],珠海:[113.5767,22.2707],咸阳:[108.7091,34.3298],三亚:[109.5119,18.2528],连云港:[119.2229,34.5967],宿迁:[118.2754,33.9615]};
 
@@ -235,7 +235,7 @@ circleLayer.addLayer(L.circleMarker([pendingCenter[1],pendingCenter[0]],{radius:
 if(resultsList.length||pendingCenter){
 var lats=resultsList.map(function(r){return r.lat}),lngs=resultsList.map(function(r){return r.lng});
 if(pendingCenter){lats.push(pendingCenter[1]);lngs.push(pendingCenter[0])}
-map.fitBounds(L.latLngBounds([[Math.min.apply(null,lats)-.01,Math.min.apply(null,lngs)-.01],[Math.max.apply(null,lats)+.01,Math.max.apply(null,lngs)+.01]]).pad(.2));
+// no auto-fit;
 }
 }
 
@@ -358,11 +358,6 @@ document.getElementById('clearAllBtn').addEventListener('click',clearAll);
 document.getElementById('copyBtn').addEventListener('click',copyAll);
 
 // Service Worker for caching
-if('serviceWorker' in navigator){
-navigator.serviceWorker.register("data:application/javascript,"+encodeURIComponent(
-"self.addEventListener('fetch',function(e){e.respondWith(caches.match(e.request).then(function(r){return r||fetch(e.request).then(function(r2){var r3=r2.clone();caches.open('v1').then(function(c){c.put(e.request,r3)});return r2})}))});"
-)).catch(function(){});
-}
 
 // Startup
 initMap();
