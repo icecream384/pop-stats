@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>人口统计查询工具</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: 'Microsoft YaHei', Arial, sans-serif; height:100vh; display:flex; flex-direction:column; background:#f0f2f5; }
+
+.toolbar { display:flex; align-items:center; gap:12px; padding:10px 16px; background:#fff; border-bottom:1px solid #d9d9d9; flex-shrink:0; z-index:1000; }
+.toolbar label { font-size:13px; color:#555; white-space:nowrap; }
+.toolbar select, .toolbar input { padding:6px 10px; border:1px solid #d9d9d9; border-radius:4px; font-size:13px; outline:none; }
+.toolbar select:focus, .toolbar input:focus { border-color:#4096ff; box-shadow:0 0 0 2px rgba(64,150,255,0.1); }
+.toolbar select { cursor:pointer; }
+
+.search-wrap { position:relative; flex:1; min-width:200px; max-width:400px; }
+.search-wrap input { width:100%; }
+.search-dropdown { position:absolute; top:100%; left:0; right:0; background:#fff; border:1px solid #d9d9d9; border-top:none; border-radius:0 0 4px 4px; max-height:240px; overflow-y:auto; display:none; z-index:1001; list-style:none; }
+.search-dropdown li { padding:8px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid #f0f0f0; }
+.search-dropdown li:hover, .search-dropdown li.active { background:#e6f4ff; }
+.search-dropdown li .name { font-weight:500; }
+.search-dropdown li .addr { font-size:11px; color:#999; margin-left:8px; }
+
+.radius-wrap { display:flex; align-items:center; gap:4px; }
+.radius-wrap input { width:80px; text-align:right; }
+
+.btn { padding:6px 16px; border:none; border-radius:4px; font-size:13px; cursor:pointer; font-weight:500; transition:opacity 0.2s; }
+.btn:hover { opacity:0.85; }
+.btn-primary { background:#1677ff; color:#fff; }
+.btn:disabled { opacity:0.5; cursor:not-allowed; }
+
+.main { display:flex; flex:1; overflow:hidden; }
+.map-container { flex:1; position:relative; }
+.map-container .loading-overlay { position:absolute; top:0;left:0;right:0;bottom:0; background:rgba(255,255,255,0.8); z-index:999; display:flex; align-items:center; justify-content:center; font-size:16px; color:#555; }
+.map-container .loading-overlay.hidden { display:none; }
+
+.results-panel { width:680px; flex-shrink:0; background:#fff; border-left:1px solid #d9d9d9; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:16px; }
+.results-panel h3 { font-size:15px; color:#333; margin-bottom:4px; }
+.results-panel .meta { font-size:12px; color:#999; }
+
+.results-table { width:100%; border-collapse:collapse; font-size:13px; }
+.results-table th, .results-table td { padding:8px 10px; border:1px solid #d0d0d0; text-align:center; vertical-align:middle; }
+.results-table th { background:#f5f5f5; font-weight:700; color:#333; }
+.results-table td { color:#333; }
+
+.results-panel .hint { font-size:11px; color:#bbb; text-align:center; padding:40px 0; }
+
+.legend { font-size:11px; color:#999; line-height:1.8; }
+.legend span { color:#1677ff; }
+
+.toast { position:fixed; top:60px; left:50%; transform:translateX(-50%); background:#333; color:#fff; padding:10px 24px; border-radius:6px; font-size:14px; z-index:9999; opacity:0; transition:opacity 0.3s; pointer-events:none; }
+.toast.show { opacity:1; }
+
+@media (max-width:768px) {
+    .main { flex-direction:column; }
+    .results-panel { width:100%; max-height:300px; }
+    .toolbar { flex-wrap:wrap; }
+}
+</style>
+</head>
+<body>
+<div class="toolbar">
+    <label>城市</label>
+    <select id="citySelect">
+        <option value="三亚">三亚</option>
+        <option value="上海">上海</option>
+        <option value="东莞">东莞</option>
+        <option value="佛山">佛山</option>
+        <option value="兰州">兰州</option>
+        <option value="北京">北京</option>
+        <option value="南京">南京</option>
+        <option value="南宁">南宁</option>
+        <option value="南昌">南昌</option>
+        <option value="南通">南通</option>
+        <option value="厦门">厦门</option>
+        <option value="台州">台州</option>
+        <option value="合肥">合肥</option>
+        <option value="咸阳">咸阳</option>
+        <option value="嘉兴">嘉兴</option>
+        <option value="大连">大连</option>
+        <option value="天津">天津</option>
+        <option value="太原">太原</option>
+        <option value="宁波">宁波</option>
+        <option value="宜昌">宜昌</option>
+        <option value="宿迁">宿迁</option>
+        <option value="常州">常州</option>
+        <option value="广州">广州</option>
+        <option value="徐州">徐州</option>
+        <option value="成都" selected>成都</option>
+        <option value="扬州">扬州</option>
+        <option value="无锡">无锡</option>
+        <option value="昆明">昆明</option>
+        <option value="杭州">杭州</option>
+        <option value="武汉">武汉</option>
+        <option value="沈阳">沈阳</option>
+        <option value="泉州">泉州</option>
+        <option value="济南">济南</option>
+        <option value="海口">海口</option>
+        <option value="深圳">深圳</option>
+        <option value="温州">温州</option>
+        <option value="烟台">烟台</option>
+        <option value="珠海">珠海</option>
+        <option value="盐城">盐城</option>
+        <option value="石家庄">石家庄</option>
+        <option value="福州">福州</option>
+        <option value="绍兴">绍兴</option>
+        <option value="苏州">苏州</option>
+        <option value="襄阳">襄阳</option>
+        <option value="西安">西安</option>
+        <option value="贵阳">贵阳</option>
+        <option value="连云港">连云港</option>
+        <option value="郑州">郑州</option>
+        <option value="重庆">重庆</option>
+        <option value="金华">金华</option>
+        <option value="长沙">长沙</option>
+        <option value="青岛">青岛</option>
+    </select>
+    <div class="search-wrap">
+        <input type="text" id="searchInput" placeholder="搜索地点..." autocomplete="off">
+        <ul class="search-dropdown" id="searchDropdown"></ul>
+    </div>
+    <label>半径</label>
+    <div class="radius-wrap">
+        <input type="number" id="radiusInput" value="2000" min="100" max="50000" step="100">
+        <span style="font-size:12px;color:#999">米</span>
+    </div>
+    <button class="btn btn-primary" id="copyBtn" disabled>📋 复制结果</button>
+</div>
+
+<div class="main">
+    <div class="map-container" id="mapContainer">
+        <div id="map" style="width:100%;height:100%"></div>
+        <div class="loading-overlay" id="loadingOverlay">加载数据中…</div>
+    </div>
+    <div class="results-panel" id="resultsPanel">
+        <div class="hint">👆 在地图上点击选择位置<br>或搜索地点后设置半径</div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+<script>
+const AMAP_KEY = '653175298a4a55e4a56de4bedc412dd6';
+const GRID_SIZE_M = 500;
+const GRID_AREA_M2 = GRID_SIZE_M * GRID_SIZE_M;
+const GRID_CIRCUM_RADIUS = GRID_SIZE_M * Math.SQRT2 / 2;
+
+const CITY_INFO = {
+    '三亚': { file: 'data/三亚.json', center: [109.5119, 18.2528], zoom: 12 },
+    '上海': { file: 'data/上海.json', center: [121.4737, 31.2304], zoom: 12 },
+    '东莞': { file: 'data/东莞.json', center: [113.7518, 23.0205], zoom: 12 },
+    '佛山': { file: 'data/佛山.json', center: [113.1219, 23.0215], zoom: 12 },
+    '兰州': { file: 'data/兰州.json', center: [103.8343, 36.0611], zoom: 12 },
+    '北京': { file: 'data/北京.json', center: [116.4075, 39.9042], zoom: 12 },
+    '南京': { file: 'data/南京.json', center: [118.7969, 32.0603], zoom: 12 },
+    '南宁': { file: 'data/南宁.json', center: [108.3661, 22.8170], zoom: 12 },
+    '南昌': { file: 'data/南昌.json', center: [115.8579, 28.6820], zoom: 12 },
+    '南通': { file: 'data/南通.json', center: [120.8937, 31.9806], zoom: 12 },
+    '厦门': { file: 'data/厦门.json', center: [118.0894, 24.4798], zoom: 12 },
+    '台州': { file: 'data/台州.json', center: [121.4206, 28.6563], zoom: 12 },
+    '合肥': { file: 'data/合肥.json', center: [117.2272, 31.8206], zoom: 12 },
+    '咸阳': { file: 'data/咸阳.json', center: [108.7091, 34.3298], zoom: 12 },
+    '嘉兴': { file: 'data/嘉兴.json', center: [120.7556, 30.7460], zoom: 12 },
+    '大连': { file: 'data/大连.json', center: [121.6147, 38.9140], zoom: 12 },
+    '天津': { file: 'data/天津.json', center: [117.1901, 39.1252], zoom: 12 },
+    '太原': { file: 'data/太原.json', center: [112.5489, 37.8706], zoom: 12 },
+    '宁波': { file: 'data/宁波.json', center: [121.5504, 29.8683], zoom: 12 },
+    '宜昌': { file: 'data/宜昌.json', center: [111.2865, 30.6918], zoom: 12 },
+    '宿迁': { file: 'data/宿迁.json', center: [118.2754, 33.9615], zoom: 12 },
+    '常州': { file: 'data/常州.json', center: [119.9740, 31.8107], zoom: 12 },
+    '广州': { file: 'data/广州.json', center: [113.2644, 23.1291], zoom: 12 },
+    '徐州': { file: 'data/徐州.json', center: [117.2841, 34.2048], zoom: 12 },
+    '成都': { file: 'data/成都.json', center: [104.0658, 30.6575], zoom: 12 },
+    '扬州': { file: 'data/扬州.json', center: [119.4129, 32.3936], zoom: 12 },
+    '无锡': { file: 'data/无锡.json', center: [120.3119, 31.4912], zoom: 12 },
+    '昆明': { file: 'data/昆明.json', center: [102.8329, 24.8801], zoom: 12 },
+    '杭州': { file: 'data/杭州.json', center: [120.1551, 30.2741], zoom: 12 },
+    '武汉': { file: 'data/武汉.json', center: [114.3054, 30.5931], zoom: 12 },
+    '沈阳': { file: 'data/沈阳.json', center: [123.4315, 41.8057], zoom: 12 },
+    '泉州': { file: 'data/泉州.json', center: [118.6759, 24.8741], zoom: 12 },
+    '济南': { file: 'data/济南.json', center: [117.1205, 36.6512], zoom: 12 },
+    '海口': { file: 'data/海口.json', center: [110.1983, 20.0440], zoom: 12 },
+    '深圳': { file: 'data/深圳.json', center: [114.0579, 22.5431], zoom: 12 },
+    '温州': { file: 'data/温州.json', center: [120.6994, 27.9943], zoom: 12 },
+    '烟台': { file: 'data/烟台.json', center: [121.4479, 37.4635], zoom: 12 },
+    '珠海': { file: 'data/珠海.json', center: [113.5767, 22.2707], zoom: 12 },
+    '盐城': { file: 'data/盐城.json', center: [120.1616, 33.3495], zoom: 12 },
+    '石家庄': { file: 'data/石家庄.json', center: [114.5149, 38.0428], zoom: 12 },
+    '福州': { file: 'data/福州.json', center: [119.2965, 26.0745], zoom: 12 },
+    '绍兴': { file: 'data/绍兴.json', center: [120.5802, 30.0318], zoom: 12 },
+    '苏州': { file: 'data/苏州.json', center: [120.5853, 31.2989], zoom: 12 },
+    '襄阳': { file: 'data/襄阳.json', center: [112.1224, 32.0090], zoom: 12 },
+    '西安': { file: 'data/西安.json', center: [108.9402, 34.2611], zoom: 12 },
+    '贵阳': { file: 'data/贵阳.json', center: [106.6302, 26.6477], zoom: 12 },
+    '连云港': { file: 'data/连云港.json', center: [119.2229, 34.5967], zoom: 12 },
+    '郑州': { file: 'data/郑州.json', center: [113.6254, 34.7466], zoom: 12 },
+    '重庆': { file: 'data/重庆.json', center: [106.5516, 29.5630], zoom: 12 },
+    '金华': { file: 'data/金华.json', center: [119.6476, 29.0792], zoom: 12 },
+    '长沙': { file: 'data/长沙.json', center: [112.9388, 28.2278], zoom: 12 },
+    '青岛': { file: 'data/青岛.json', center: [120.3826, 36.0671], zoom: 12 },
+};
+
+let map, circleMarker, centerMarker, radiusLine;
+let cityData = null;
+let centerPoint = null;
+let radiusMeters = 2000;
+let computedResults = null;
+let searchTimer = null;
+
+function initMap() {
+    map = L.map('map', { zoomControl: true, attributionControl: true }).setView([30.6575, 104.0658], 12);
+    L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+        subdomains: '1234', attribution: '&copy; 高德地图', maxZoom: 18,
+    }).addTo(map);
+    map.on('click', function(e) {
+        setCenter([e.latlng.lng, e.latlng.lat]);
+        reverseGeocode(e.latlng.lng, e.latlng.lat);
+    });
+}
+
+async function loadCity(name) {
+    const overlay = document.getElementById('loadingOverlay');
+    overlay.classList.remove('hidden');
+    const info = CITY_INFO[name];
+    const resp = await fetch(info.file);
+    if (!resp.ok) throw new Error(`加载 ${name} 数据失败: ${resp.status}`);
+    const raw = await resp.json();
+    cityData = { name: raw.name, bbox: raw.bbox, grids: raw.grids };
+    map.setView(info.center.reverse(), info.zoom);
+    clearCircle();
+    centerPoint = null;
+    computedResults = null;
+    renderEmpty();
+    overlay.classList.add('hidden');
+    console.log(`Loaded ${name}: ${cityData.grids.length} grids`);
+}
+
+function setCenter(lnglat) {
+    centerPoint = lnglat;
+    drawCircle();
+    computeAndRender();
+}
+
+function clearCircle() {
+    if (circleMarker) { map.removeLayer(circleMarker); circleMarker = null; }
+    if (centerMarker) { map.removeLayer(centerMarker); centerMarker = null; }
+    if (radiusLine) { map.removeLayer(radiusLine); radiusLine = null; }
+}
+
+function drawCircle() {
+    clearCircle();
+    if (!centerPoint) return;
+    const [lng, lat] = centerPoint;
+    centerMarker = L.marker([lat, lng], {
+        draggable: true,
+        icon: L.divIcon({ className: 'center-icon', html: '<div style="width:14px;height:14px;background:#ff4d4f;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);cursor:grab;"></div>', iconSize:[14,14], iconAnchor:[7,7] })
+    }).addTo(map);
+    centerMarker.on('dragend', function() {
+        const pos = centerMarker.getLatLng();
+        centerPoint = [pos.lng, pos.lat];
+        drawCircle();
+        computeAndRender();
+        reverseGeocode(pos.lng, pos.lat);
+    });
+    circleMarker = L.circle([lat, lng], {
+        radius: radiusMeters, color: '#1677ff', fillColor: '#1677ff', fillOpacity: 0.1, weight: 2, dashArray: '6,4',
+    }).addTo(map);
+    const rlng = lng + (radiusMeters / (111320 * Math.cos(lat * Math.PI / 180)));
+    radiusLine = L.polyline([[lat, lng], [lat, rlng]], { color: '#ff4d4f', weight: 2, dashArray: '3,3' }).addTo(map);
+    map.fitBounds(circleMarker.getBounds().pad(0.2));
+}
+
+async function searchSuggestions(keywords) {
+    const city = document.getElementById('citySelect').value;
+    const url = `https://restapi.amap.com/v3/assistant/inputtips?keywords=${encodeURIComponent(keywords)}&city=${encodeURIComponent(city)}&citylimit=true&output=JSON&key=${AMAP_KEY}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.status === '1' && data.tips) {
+        return data.tips.filter(t => t.location && t.location.length > 0);
+    }
+    return [];
+}
+
+async function geocode(address) {
+    const city = document.getElementById('citySelect').value;
+    const url = `https://restapi.amap.com/v3/geocode/geo?address=${encodeURIComponent(address)}&city=${encodeURIComponent(city)}&output=JSON&key=${AMAP_KEY}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.status === '1' && data.geocodes && data.geocodes.length > 0) {
+        const loc = data.geocodes[0].location.split(',').map(Number);
+        return { lng: loc[0], lat: loc[1], name: data.geocodes[0].formatted_address };
+    }
+    return null;
+}
+
+async function reverseGeocode(lng, lat) {
+    try {
+        const url = `https://restapi.amap.com/v3/geocode/regeo?location=${lng},${lat}&output=JSON&key=${AMAP_KEY}`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+        if (data.status === '1' && data.regeocode) {
+            document.getElementById('searchInput').value = data.regeocode.formatted_address || '';
+        }
+    } catch(e) { }
+}
+
+function formatNum(n) {
+    return Math.round(n).toLocaleString('zh-CN', { maximumFractionDigits: 0 });
+}
+
+function makeNameLabel(r) {
+    return `${(r.radius/1000).toFixed(1)}km半径范围`;
+}
+
+function computeAndRender() {
+    if (!cityData || !centerPoint || !radiusMeters) {
+        renderEmpty();
+        return;
+    }
+    const t0 = performance.now();
+    const [clng, clat] = centerPoint;
+    const circlePoly = turf.circle([clng, clat], radiusMeters / 1000, { steps: 64, units: 'kilometers' });
+    const circleBBox = turf.bbox(circlePoly);
+    const [bxmin, bymin, bxmax, bymax] = circleBBox;
+
+    let resPop = 0, resDenW = 0, resDenWeight = 0;
+    let workPop = 0, workDenW = 0, workDenWeight = 0;
+    let mixPop = 0, mixDenW = 0, mixDenWeight = 0;
+    let otPop = 0, otDenW = 0, otDenWeight = 0;
+    let totalCoveredArea = 0;
+    let gridCount = 0, fullInCount = 0, boundaryCount = 0;
+
+    const centerTurf = turf.point([clng, clat]);
+
+    for (const g of cityData.grids) {
+        const [glng, glat, rp, rd, wp, wd, mp, md, op, od] = g;
+        if (glng < bxmin - 0.005 || glng > bxmax + 0.005 || glat < bymin - 0.005 || glat > bymax + 0.005) continue;
+
+        const gridPt = turf.point([glng, glat]);
+        const dist = turf.distance(centerTurf, gridPt, { units: 'meters' });
+        let areaRatio;
+        if (dist + GRID_CIRCUM_RADIUS <= radiusMeters) {
+            areaRatio = 1.0;
+            fullInCount++;
+        } else if (dist - GRID_CIRCUM_RADIUS >= radiusMeters) {
+            continue;
+        } else {
+            boundaryCount++;
+            const latPerM = 1 / 111320;
+            const lonPerM = 1 / (111320 * Math.cos(glat * Math.PI / 180));
+            const half = GRID_SIZE_M / 2;
+            const square = turf.bboxPolygon([
+                glng - half * lonPerM, glat - half * latPerM,
+                glng + half * lonPerM, glat + half * latPerM
+            ]);
+            try {
+                const inter = turf.intersect(circlePoly, square);
+                if (inter) {
+                    areaRatio = Math.min(1, turf.area(inter) / GRID_AREA_M2);
+                } else if (turf.booleanPointInPolygon(gridPt, circlePoly)) {
+                    areaRatio = 1.0;
+                } else {
+                    continue;
+                }
+            } catch(e) {
+                if (dist < radiusMeters) { areaRatio = 1.0; } else { continue; }
+            }
+        }
+        if (areaRatio <= 0) continue;
+        gridCount++;
+        const coveredArea = GRID_AREA_M2 * areaRatio;
+        totalCoveredArea += coveredArea;
+        resPop += rp * areaRatio;
+        workPop += wp * areaRatio;
+        mixPop += mp * areaRatio;
+        otPop += op * areaRatio;
+        if (rd > 0) { resDenW += rd * coveredArea; resDenWeight += coveredArea; }
+        if (wd > 0) { workDenW += wd * coveredArea; workDenWeight += coveredArea; }
+        if (md > 0) { mixDenW += md * coveredArea; mixDenWeight += coveredArea; }
+        if (od > 0) { otDenW += od * coveredArea; otDenWeight += coveredArea; }
+    }
+
+    const resDen = resDenWeight > 0 ? resDenW / resDenWeight : 0;
+    const workDen = workDenWeight > 0 ? workDenW / workDenWeight : 0;
+    const mixDen = mixDenWeight > 0 ? mixDenW / mixDenWeight : 0;
+    const otDen = otDenWeight > 0 ? otDenW / otDenWeight : 0;
+    const elapsed = performance.now() - t0;
+
+    computedResults = {
+        centerLng: clng, centerLat: clat, radius: radiusMeters,
+        resPop, resDen, workPop, workDen, mixPop, mixDen, otPop, otDen,
+        gridCount, fullInCount, boundaryCount,
+        totalCoveredArea, elapsed,
+        circleArea: Math.PI * radiusMeters * radiusMeters,
+    };
+    renderResults();
+}
+
+function renderEmpty() {
+    document.getElementById('resultsPanel').innerHTML = '<div class="hint">👆 在地图上点击选择位置<br>或搜索地点后设置半径</div>';
+    document.getElementById('copyBtn').disabled = true;
+    computedResults = null;
+}
+
+function renderResults() {
+    if (!computedResults) { renderEmpty(); return; }
+    const r = computedResults;
+    document.getElementById('copyBtn').disabled = false;
+    const areaKm2 = r.totalCoveredArea / 1e6;
+    const name = makeNameLabel(r);
+
+    document.getElementById('resultsPanel').innerHTML = `
+        <div>
+            <h3>📊 统计结果</h3>
+            <div class="meta">
+                中心: ${r.centerLng.toFixed(4)}, ${r.centerLat.toFixed(4)} &nbsp;|&nbsp;
+                半径: ${r.radius}m &nbsp;|&nbsp;
+                计算耗时: ${r.elapsed.toFixed(0)}ms
+            </div>
+        </div>
+        <table class="results-table" id="resultTable">
+            <thead>
+                <tr><th>名称</th><th>居住人口</th><th>密度</th><th>工作人口</th><th>密度</th><th>职住净人口</th><th>密度</th><th>加班人口</th><th>密度</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>${name}</td>
+                    <td>${formatNum(r.resPop)}</td>
+                    <td>${formatNum(r.resDen)}</td>
+                    <td>${formatNum(r.workPop)}</td>
+                    <td>${formatNum(r.workDen)}</td>
+                    <td>${formatNum(r.mixPop)}</td>
+                    <td>${formatNum(r.mixDen)}</td>
+                    <td>${formatNum(r.otPop)}</td>
+                    <td>${formatNum(r.otDen)}</td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="legend">
+            📐 计算方法：面积加权交集（方案C）<br>
+            🔢 覆盖网格：${r.gridCount} 个（完全包含 ${r.fullInCount} + 边界 ${r.boundaryCount}）<br>
+            📏 覆盖面积：${areaKm2.toFixed(2)} km²（圆面积 ${(r.circleArea/1e6).toFixed(2)} km²）<br>
+            ⚡ 计算耗时：${r.elapsed.toFixed(0)} ms
+        </div>
+    `;
+}
+
+async function copyResults() {
+    if (!computedResults) return;
+    const r = computedResults;
+    const name = makeNameLabel(r);
+
+    const html = `<html><body><table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse;font-family:'微软雅黑',Arial,sans-serif;font-size:11pt;">
+<tr style="font-weight:bold;text-align:center;vertical-align:center;">
+  <td>名称</td><td>居住人口</td><td>密度</td><td>工作人口</td><td>密度</td><td>职住净人口</td><td>密度</td><td>加班人口</td><td>密度</td>
+</tr>
+<tr style="text-align:center;vertical-align:center;">
+  <td>${name}</td>
+  <td>${Math.round(r.resPop)}</td><td>${Math.round(r.resDen)}</td>
+  <td>${Math.round(r.workPop)}</td><td>${Math.round(r.workDen)}</td>
+  <td>${Math.round(r.mixPop)}</td><td>${Math.round(r.mixDen)}</td>
+  <td>${Math.round(r.otPop)}</td><td>${Math.round(r.otDen)}</td>
+</tr>
+</table></body></html>`;
+
+    const text = [
+        '名称\t居住人口\t密度\t工作人口\t密度\t职住净人口\t密度\t加班人口\t密度',
+        `${name}\t${Math.round(r.resPop)}\t${Math.round(r.resDen)}\t${Math.round(r.workPop)}\t${Math.round(r.workDen)}\t${Math.round(r.mixPop)}\t${Math.round(r.mixDen)}\t${Math.round(r.otPop)}\t${Math.round(r.otDen)}`,
+    ].join('\n');
+
+    try {
+        const ci = new ClipboardItem({
+            'text/html': new Blob([html], { type: 'text/html' }),
+            'text/plain': new Blob([text], { type: 'text/plain' }),
+        });
+        await navigator.clipboard.write([ci]);
+        showToast('✅ 已复制！可直接粘贴到 Excel（带格式）');
+    } catch (e) {
+        try {
+            const el = document.createElement('div');
+            el.innerHTML = html;
+            el.style.cssText = 'position:absolute;left:-9999px;';
+            document.body.appendChild(el);
+            const rng = document.createRange();
+            rng.selectNodeContents(el);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(rng);
+            document.execCommand('copy');
+            sel.removeAllRanges();
+            document.body.removeChild(el);
+            showToast('✅ 已复制！可直接粘贴到 Excel');
+        } catch (e2) {
+            await navigator.clipboard.writeText(text);
+            showToast('✅ 已复制（纯文本）');
+        }
+    }
+}
+
+function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function() { t.classList.remove('show'); }, 2500);
+}
+
+// Event handlers
+document.getElementById('citySelect').addEventListener('change', function() { loadCity(this.value); });
+document.getElementById('radiusInput').addEventListener('change', function() {
+    radiusMeters = Math.max(100, Math.min(50000, parseInt(this.value) || 2000));
+    this.value = radiusMeters;
+    if (centerPoint) { drawCircle(); computeAndRender(); }
+});
+document.getElementById('searchInput').addEventListener('input', function() {
+    const q = this.value.trim();
+    if (q.length < 1) { document.getElementById('searchDropdown').style.display = 'none'; return; }
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(async function() {
+        const tips = await searchSuggestions(q);
+        const dd = document.getElementById('searchDropdown');
+        dd.innerHTML = '';
+        if (tips.length > 0) {
+            tips.forEach(function(tip) {
+                const li = document.createElement('li');
+                li.innerHTML = '<span class="name">' + tip.name + '</span><span class="addr">' + (tip.district || '') + '</span>';
+                li.addEventListener('click', async function() {
+                    dd.style.display = 'none';
+                    document.getElementById('searchInput').value = tip.name;
+                    const geo = await geocode(tip.name);
+                    if (geo) { setCenter([geo.lng, geo.lat]); map.setView([geo.lat, geo.lng], 15); }
+                });
+                dd.appendChild(li);
+            });
+            dd.style.display = 'block';
+        } else {
+            dd.style.display = 'none';
+        }
+    }, 300);
+});
+document.getElementById('searchInput').addEventListener('keydown', async function(e) {
+    if (e.key === 'Enter') {
+        clearTimeout(searchTimer);
+        document.getElementById('searchDropdown').style.display = 'none';
+        const q = this.value.trim();
+        if (q) {
+            const geo = await geocode(q);
+            if (geo) { setCenter([geo.lng, geo.lat]); map.setView([geo.lat, geo.lng], 15); }
+            else { showToast('未找到该地点，请尝试更详细的地址'); }
+        }
+    }
+});
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.search-wrap')) { document.getElementById('searchDropdown').style.display = 'none'; }
+});
+document.getElementById('copyBtn').addEventListener('click', copyResults);
+
+// Startup
+initMap();
+loadCity('成都');
+</script>
+</body>
+</html>

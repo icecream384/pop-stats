@@ -1,0 +1,14 @@
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+原数据/
+增加城市/
+202506*/
+benchmark.py
+convert_shp.py
+convert_geojson.py
+server.py
+*.xlsx
+__pycache__/
