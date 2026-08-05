@@ -92,20 +92,38 @@ b.addEventListener('click',c);i.addEventListener('keydown',function(ev){if(ev.ke
 <script>
 var AMAP_KEY='653175298a4a55e4a56de4bedc412dd6';
 var GRID_S=500,GRID_A=GRID_S*GRID_S,GRID_C=GRID_S*Math.SQRT2/2,SCALE=100000;
-var CDN_BASE='data/';
+var TILE_BASE='data_tiled/';
 var CITIES=['北京','上海','广州','深圳','成都','重庆','杭州','武汉','西安','南京','天津','苏州','长沙','郑州','东莞','青岛','沈阳','佛山','济南','大连','合肥','无锡','宁波','厦门','福州','温州','南宁','贵阳','昆明','南昌','海口','太原','石家庄','兰州','烟台','泉州','徐州','常州','南通','扬州','绍兴','嘉兴','台州','金华','盐城','宜昌','襄阳','珠海','咸阳','三亚','连云港','宿迁'];
 var CC={北京:[116.4075,39.9042],上海:[121.4737,31.2304],广州:[113.2644,23.1291],深圳:[114.0579,22.5431],成都:[104.0658,30.6575],重庆:[106.5516,29.5630],杭州:[120.1551,30.2741],武汉:[114.3054,30.5931],西安:[108.9402,34.2611],南京:[118.7969,32.0603],天津:[117.1901,39.1252],苏州:[120.5853,31.2989],长沙:[112.9388,28.2278],郑州:[113.6254,34.7466],东莞:[113.7518,23.0205],青岛:[120.3826,36.0671],沈阳:[123.4315,41.8057],佛山:[113.1219,23.0215],济南:[117.1205,36.6512],大连:[121.6147,38.9140],合肥:[117.2272,31.8206],无锡:[120.3119,31.4912],宁波:[121.5504,29.8683],厦门:[118.0894,24.4798],福州:[119.2965,26.0745],温州:[120.6994,27.9943],南宁:[108.3661,22.8170],贵阳:[106.6302,26.6477],昆明:[102.8329,24.8801],南昌:[115.8579,28.6820],海口:[110.1983,20.0440],太原:[112.5489,37.8706],石家庄:[114.5149,38.0428],兰州:[103.8343,36.0611],烟台:[121.4479,37.4635],泉州:[118.6759,24.8741],徐州:[117.2841,34.2048],常州:[119.9740,31.8107],南通:[120.8937,31.9806],扬州:[119.4129,32.3936],绍兴:[120.5802,30.0318],嘉兴:[120.7556,30.7460],台州:[121.4206,28.6563],金华:[119.6476,29.0792],盐城:[120.1616,33.3495],宜昌:[111.2865,30.6918],襄阳:[112.1224,32.0090],珠海:[113.5767,22.2707],咸阳:[108.7091,34.3298],三亚:[109.5119,18.2528],连云港:[119.2229,34.5967],宿迁:[118.2754,33.9615]};
 
 var map,circleLayer,loadingOverlay,loadingText,pendingCenter=null,resultsList=[],nextId=1,searchTimer=null,citySearchTimer=null;
-// cityCache: {cityName: {bbox, grids, meta:{n,b,s,m,c,t}}}
-var cityCache={};
+var cityIndexCache={};
 var COLORS=['#1677ff','#52c41a','#fa8c16','#722ed1','#eb2f96','#13c2c2','#f5222d','#2f54eb'];
+
+// ============================================================
+// IndexedDB
+// ============================================================
+var _db;
+function openDB(){return new Promise(function(res,rej){
+if(_db){res(_db);return}
+var r=indexedDB.open('popstats_v1',1);
+r.onupgradeneeded=function(e){if(!e.target.result.objectStoreNames.contains('tiles'))e.target.result.createObjectStore('tiles')};
+r.onsuccess=function(e){_db=e.target.result;res(_db)};
+r.onerror=function(e){rej(e.target.error)};
+})}
+
+async function idbGet(key){
+try{var db=await openDB();return new Promise(function(res,rej){var t=db.transaction('tiles','readonly').objectStore('tiles').get(key);t.onsuccess=function(){res(t.result)};t.onerror=function(){rej(t.error)}})}catch(e){return null}
+}
+async function idbPut(key,data){
+try{var db=await openDB();return new Promise(function(res,rej){var t=db.transaction('tiles','readwrite').objectStore('tiles').put(data,key);t.onsuccess=function(){res()};t.onerror=function(){rej(t.error)}})}catch(e){}
+}
 
 // ============================================================
 // Init
 // ============================================================
 function initMap(){
-map=L.map('map',{zoomControl:true}).setView(CC['成都'].reverse(),12);
+map=L.map('map',{zoomControl:true});
 L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{subdomains:'1234',attribution:'&copy; 高德',maxZoom:18}).addTo(map);
 circleLayer=L.layerGroup().addTo(map);
 map.on('click',function(e){pendingCenter=[e.latlng.lng,e.latlng.lat];reverseGeocode(e.latlng.lng,e.latlng.lat);drawAll()});
@@ -114,61 +132,57 @@ loadingText=document.getElementById('loadingText');
 }
 
 // ============================================================
-// Data: parallel chunked loading via jsDelivr CDN
+// Data: tile-based on-demand loading + IndexedDB cache
 // ============================================================
 function showLoad(msg){loadingText.textContent=msg;loadingOverlay.classList.remove('hidden')}
 function hideLoad(){loadingOverlay.classList.add('hidden')}
 
-async function loadCity(name){
-// if already cached and loaded, just return
-if(cityCache[name]&&cityCache[name].grids){return}
-
-showLoad('加载 '+name+' 数据…');
-
-// Try chunked format first (CDN)
-try{
-var metaResp=await fetch(CDN_BASE+name+'/meta.json',{cache:'force-cache'});
-if(metaResp.ok){
-var meta=await metaResp.json();
-// Load all chunks in parallel
-var chunks=[];
-for(var i=0;i<meta.c;i++){
-chunks.push(fetch(CDN_BASE+name+'/'+i+'.json',{cache:'force-cache'}));
-}
-loadingText.textContent='加载 '+name+' ('+meta.c+'分片)…';
-var responses=await Promise.all(chunks);
-var allGrids=[];
-for(var i=0;i<responses.length;i++){
-if(!responses[i].ok)throw new Error('chunk '+i+' failed');
-var cdata=await responses[i].json();
-allGrids=allGrids.concat(cdata.g);
-}
-cityCache[name]={bbox:meta.b,grids:allGrids,meta:meta};
-console.log(name+': loaded '+meta.t+' grids from '+meta.c+' chunks');
-hideLoad();
-return;
-}
-}catch(e){console.log('CDN chunked failed, trying single file: '+e.message)}
-
-// Fallback: single file
-try{
-var resp=await fetch(CDN_BASE+name+'.json',{cache:'force-cache'});
-if(resp.ok){
-var raw=await resp.json();
-cityCache[name]={bbox:raw.b,grids:raw.g};
-console.log(name+': loaded single file');
-hideLoad();
-return;
-}
-}catch(e){}
-
-showToast('加载 '+name+' 失败');
-hideLoad();
+async function loadCityIndex(name){
+if(cityIndexCache[name])return cityIndexCache[name];
+var idxKey='idx:'+name;
+var cached=await idbGet(idxKey);
+if(cached){cityIndexCache[name]=cached;return cached}
+var resp=await fetch(TILE_BASE+name+'/index.json',{cache:'force-cache'});
+if(!resp.ok)throw new Error('Failed to load index for '+name);
+var idx=await resp.json();
+cityIndexCache[name]=idx;
+idbPut(idxKey,idx);
+return idx;
 }
 
-function getGrids(name){
-var c=cityCache[name];
-return c?c.grids:null;
+function getTilesForCircle(index,lng,lat,radius){
+var r=6371000,dLat=radius/r*180/Math.PI;
+var dLng=dLat/Math.cos(lat*Math.PI/180);
+var gridMargin=GRID_C/111320;
+var minLat=lat-dLat-gridMargin,maxLat=lat+dLat+gridMargin;
+var minLng=lng-dLng-gridMargin,maxLng=lng+dLng+gridMargin;
+var toLat=index.to[0],toLng=index.to[1],td=index.td;
+var minRow=Math.max(0,Math.floor((minLat-toLat)/td));
+var maxRow=Math.min(index.nr-1,Math.floor((maxLat-toLat)/td));
+var minCol=Math.max(0,Math.floor((minLng-toLng)/td));
+var maxCol=Math.min(index.nc-1,Math.floor((maxLng-toLng)/td));
+var keys=[];
+for(var r=minRow;r<=maxRow;r++)
+for(var c=minCol;c<=maxCol;c++)
+if(index.tiles[r+'_'+c])keys.push([r,c]);
+return keys;
+}
+
+async function loadTiles(cityName,tileKeys){
+var grids=[];
+var proms=tileKeys.map(function(tk){
+var row=tk[0],col=tk[1];
+var key=cityName+'/t_'+row+'_'+col;
+return idbGet(key).then(function(data){
+if(data)return data;
+return fetch(TILE_BASE+cityName+'/t_'+row+'_'+col+'.json',{cache:'force-cache'})
+.then(function(r){if(!r.ok)throw new Error('tile fail');return r.json()})
+.then(function(d){idbPut(key,d);return d});
+});
+});
+var results=await Promise.all(proms);
+for(var i=0;i<results.length;i++){if(results[i]&&results[i].g)grids=grids.concat(results[i].g)}
+return grids;
 }
 
 // ============================================================
@@ -179,10 +193,24 @@ function showCityDropdown(list){var d=document.getElementById('cityDropdown');d.
 if(!list||!list.length){d.style.display='none';return}
 list.forEach(function(c){var l=document.createElement('li');l.textContent=c;l.addEventListener('click',function(){d.style.display='none';document.getElementById('cityInput').value=c;selectCity(c)});d.appendChild(l)});d.style.display='block'}
 async function selectCity(name){
-// Load city data if needed, but do NOT clear results
-await loadCity(name);
+localStorage.setItem('_lastCity',name);
+showLoad('加载 '+name+' 索引…');
+try{await loadCityIndex(name)}catch(e){showToast('加载 '+name+' 失败');hideLoad();return}
+hideLoad();
 var cc=CC[name];if(cc)map.setView(cc.reverse(),12);
 pendingCenter=null;drawAll();
+}
+
+async function getDefaultCity(){
+var saved=localStorage.getItem('_lastCity');
+if(saved&&CC[saved])return saved;
+try{
+var pos=await new Promise(function(res,rej){navigator.geolocation.getCurrentPosition(res,rej,{timeout:5000,maximumAge:600000})});
+var lat=pos.coords.latitude,lng=pos.coords.longitude,minDist=Infinity,best=null;
+for(var n in CC){var c=CC[n],dLat=lat-c[1],dLng=lng-c[0],d=dLat*dLat+dLng*dLng;if(d<minDist){minDist=d;best=n}}
+if(best)return best;
+}catch(e){}
+return '成都';
 }
 document.getElementById('cityInput').addEventListener('input',function(){
 var q=this.value.trim();clearTimeout(citySearchTimer);
@@ -285,12 +313,18 @@ var cityName=document.getElementById('cityInput').value.trim();
 if(!cityName||CITIES.indexOf(cityName)<0){showToast('请选择城市');return}
 if(!pendingCenter){showToast('请在地图上点击或搜索地点');return}
 
-await loadCity(cityName);
-var grids=getGrids(cityName);
-if(!grids){showToast('城市数据加载失败');return}
-
 var lng=pendingCenter[0],lat=pendingCenter[1];
 var radius=parseInt(document.getElementById('radiusInput').value)||3000;
+
+// Load only tiles covering this circle
+showLoad('加载 '+cityName+' 瓦片…');
+try{var index=await loadCityIndex(cityName)}catch(e){showToast('城市索引加载失败');hideLoad();return}
+var tileKeys=getTilesForCircle(index,lng,lat,radius);
+showLoad('加载 '+cityName+' ('+tileKeys.length+'瓦片)…');
+try{var grids=await loadTiles(cityName,tileKeys)}catch(e){showToast('瓦片加载失败: '+e.message);hideLoad();return}
+hideLoad();
+if(!grids.length){showToast('该区域无数据');return}
+
 var name=makeName(lng,lat,radius);
 var stats=computeOne(grids,lng,lat,radius);
 resultsList.push({id:nextId++,name:name,lng:lng,lat:lat,radius:radius,city:cityName,s:stats});
@@ -357,11 +391,12 @@ document.getElementById('addBtn').addEventListener('click',addResult);
 document.getElementById('clearAllBtn').addEventListener('click',clearAll);
 document.getElementById('copyBtn').addEventListener('click',copyAll);
 
-// Service Worker for caching
-
 // Startup
 initMap();
-loadCity('成都').then(function(){document.getElementById('cityInput').value='成都'});
+getDefaultCity().then(function(defaultCity){
+document.getElementById('cityInput').value=defaultCity;
+selectCity(defaultCity);
+}).catch(function(){selectCity('成都')});
 </script>
 </body>
 </html>
