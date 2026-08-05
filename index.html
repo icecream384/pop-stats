@@ -299,14 +299,10 @@ gc:gc,fc:fc,bc:bc,area:cov/1e6,ms:performance.now()-t0};
 // ============================================================
 // Name
 // ============================================================
-function makeName(){
-var addr=document.getElementById('searchInput').value.trim();
-var city=document.getElementById('cityInput').value.trim();
-var radius=parseInt(document.getElementById('radiusInput').value)||3000;
+function makeName(lng,lat,radius){
+var city=window._lastCity||'',road=window._lastRoad||'';
 var rs=radius>=1000?((radius/1000).toFixed(1).replace('.0','')+'km'):radius+'m';
-// Use address from search input if available (most reliable), fallback to reverse-geocoded fields
-var label=addr||(window._lastCity||'')+(window._lastRoad||'')+'地块';
-return label+' '+rs;
+return city+road+'地块'+rs;
 }
 
 // ============================================================
@@ -329,7 +325,7 @@ try{var grids=await loadTiles(cityName,tileKeys)}catch(e){showToast('瓦片加�
 hideLoad();
 if(!grids.length){showToast('该区域无数据');return}
 
-var name=makeName();
+var name=makeName(lng,lat,radius);
 var stats=computeOne(grids,lng,lat,radius);
 resultsList.push({id:nextId++,name:name,lng:lng,lat:lat,radius:radius,city:cityName,s:stats});
 pendingCenter=null;drawAll();renderResults();
