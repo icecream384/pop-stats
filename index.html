@@ -342,6 +342,10 @@ drawAll();renderResults();
 if(!resultsList.length)pendingCenter=null;
 showToast('已删除');
 }
+function renameResult(id,newName){
+var r=resultsList.find(function(r){return r.id===id});
+if(r){r.name=newName;showToast('已重命名')}
+}
 function clearAll(){resultsList=[];pendingCenter=null;drawAll();renderResults();showToast('已全部清除')}
 
 // ============================================================
@@ -356,7 +360,7 @@ var tg=0,tm=0;resultsList.forEach(function(r){tg+=r.s.gc;tm+=r.s.ms});
 var h='<h3>📊 统计结果 <span style="font-weight:400;font-size:12px;color:#999">（'+resultsList.length+'个地块）</span></h3>';
 h+='<table class="results-table"><thead><tr><th>编号</th><th>名称</th><th>居住人口(人)</th><th>密度(人/km²)</th><th>工作人口(人)</th><th>密度(人/km²)</th><th>职住净人口(人)</th><th>密度(人/km²)</th><th>加班人口(人)</th><th>密度(人/km²)</th><th>操作</th></tr></thead><tbody>';
 resultsList.forEach(function(r,i){var s=r.s;
-h+='<tr><td>'+(i+1)+'</td><td>'+r.name+'</td>';
+h+='<tr><td>'+(i+1)+'</td><td><input value="'+r.name+'" data-id="'+r.id+'" style="border:none;background:transparent;font-size:11px;font-family:inherit;width:180px;outline:none;padding:2px" onchange="renameResult('+r.id+',this.value)" onfocus="this.select()"></td>';
 h+='<td>'+fmt(s.resPop)+'</td><td>'+fmt(s.resDen)+'</td>';
 h+='<td>'+fmt(s.workPop)+'</td><td>'+fmt(s.workDen)+'</td>';
 h+='<td>'+fmt(s.mixPop)+'</td><td>'+fmt(s.mixDen)+'</td>';
